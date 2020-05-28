@@ -48,11 +48,12 @@ use gaussian_topog_mod, only: gaussian_topog_init, get_gaussian_topog
 use   horiz_interp_mod, only: horiz_interp_type, horiz_interp_new, &
                               horiz_interp, horiz_interp_del
 
-use            fms_mod, only: check_nml_error, stdlog,    &
+use            fms_mod, only: file_exist, check_nml_error,               &
+                              open_namelist_file, close_file, stdlog,    &
                               mpp_pe, mpp_root_pe, write_version_number, &
-                              error_mesg, FATAL, NOTE, &
+                              open_ieee32_file, error_mesg, FATAL, NOTE, &
                               mpp_error
-use        fms2_io_mod, only: read_data, FmsNetcdfFile_t, file_exists, open_file
+use         fms_io_mod, only: read_data
 use      constants_mod, only: PI
 use            mpp_mod, only: input_nml_file
 
@@ -98,10 +99,6 @@ end interface
    namelist /topography_nml/ topog_file, water_file
 ! </NAMELIST>
 
-   integer, parameter    :: TOPOG_INDEX = 1
-   integer, parameter    :: WATER_INDEX = 2
-   type(FmsNetcdfFile_t) :: fileobj(2)
-   logical :: file_is_opened(2) = .false.
 !-----------------------------------------------------------------------
 ! --- resolution of the topography data set ---
 ! <DATASET NAME="">
@@ -129,6 +126,7 @@ end interface
 !                    [real :: data(nlon,nlat)]
 ! </PRE>
 ! </DATASET>
+  integer :: unit
   integer :: ipts, jpts
   integer, parameter :: COMPUTE_STDEV = 123  ! use this flag to
                                              !   compute st dev
@@ -206,7 +204,7 @@ end interface
         call error_mesg('get_topog_mean_1d','shape(zmean) is not&
             & equal to (/size(blon)-1,size(blat)-1/))', FATAL)
 
-   if ( open_topog_file() ) then
+   if ( open_topog_file(topog_file) ) then
        call interp_topog_1d ( blon, blat, zmean )
        get_topog_mean_1d = .true.
    else
@@ -233,7 +231,7 @@ end interface
         call error_mesg('get_topog_mean_2d','shape(zmean) is not&
             & equal to (/size(blon,1)-1,size(blon,2)-1/))', FATAL)
 
-   if ( open_topog_file() ) then
+   if ( open_topog_file(topog_file) ) then
        call interp_topog_2d ( blon, blat, zmean )
        get_topog_mean_2d = .true.
    else
@@ -291,7 +289,7 @@ end interface
        call error_mesg('get_topog_stdev','shape(stdev) is not&
             & equal to (/size(blon)-1,size(blat)-1/))', FATAL)
 
-   if ( open_topog_file() ) then
+   if ( open_topog_file(topog_file) ) then
        call interp_topog_1d ( blon, blat, stdev, flag=COMPUTE_STDEV )
        get_topog_stdev_1d = .true.
    else
@@ -318,7 +316,7 @@ end interface
         call error_mesg('get_topog_stdev_2d','shape(stdev) is not&
             & equal to (/size(blon,1)-1,size(blon,2)-1/))', FATAL)
 
-   if ( open_topog_file() ) then
+   if ( open_topog_file(topog_file) ) then
        call interp_topog_2d ( blon, blat, stdev, flag=COMPUTE_STDEV )
        get_topog_stdev_2d = .true.
    else
@@ -373,7 +371,7 @@ end interface
         call error_mesg('get_ocean_frac','shape(ocean_frac) is not&
                  & equal to (/size(blon)-1,size(blat)-1/))', FATAL)
 
-   if ( open_water_file() ) then
+   if ( open_topog_file(water_file) ) then
        call interp_water_1d ( blon, blat, ocean_frac, do_ocean=.true. )
        get_ocean_frac_1d = .true.
    else
@@ -400,7 +398,7 @@ end interface
         call error_mesg('get_ocean_frac_2d','shape(ocean_frac) is not&
             & equal to (/size(blon,1)-1,size(blon,2)-1/))', FATAL)
 
-   if ( open_water_file() ) then
+   if ( open_topog_file(water_file) ) then
        call interp_water_2d ( blon, blat, ocean_frac, do_ocean=.true. )
        get_ocean_frac_2d = .true.
    else
@@ -539,7 +537,7 @@ end interface
         call error_mesg('get_water_frac_1d','shape(water_frac) is not&
                  & equal to (/size(blon)-1,size(blat)-1/))', FATAL)
 
-   if ( open_water_file() ) then
+   if ( open_topog_file(water_file) ) then
        call interp_water_1d ( blon, blat, water_frac )
        get_water_frac_1d = .true.
    else
@@ -566,7 +564,7 @@ end interface
         call error_mesg('get_water_frac_2d','shape(water_frac) is not&
             & equal to (/size(blon,1)-1,size(blon,2)-1/))', FATAL)
 
-   if ( open_water_file() ) then
+   if ( open_topog_file(water_file) ) then
        call interp_water_2d ( blon, blat, water_frac )
        get_water_frac_2d = .true.
    else
@@ -665,60 +663,34 @@ end interface
 !##################   private interfaces below here   ##################
 !#######################################################################
 
- function open_topog_file ( )
+ function open_topog_file ( filename )
+ character(len=*), intent(in) :: filename
  logical :: open_topog_file
  real    :: r_ipts, r_jpts
  integer :: namelen
 
-  namelen = len(trim(topog_file))
-  if ( file_exists(topog_file) .AND. topog_file(namelen-2:namelen) == '.nc') then
+ namelen = len(trim(filename))
+  if ( file_exist(filename) .AND. filename(namelen-2:namelen) == '.nc') then
      if (mpp_pe() == mpp_root_pe()) call mpp_error ('topography_mod', &
-            'Reading NetCDF formatted input data file: '//trim(topog_file), NOTE)
-     if(.not. file_is_opened(TOPOG_INDEX) ) then
-        if(.not. open_file(fileobj(TOPOG_INDEX), topog_file, 'read' )) then
-           call mpp_error(FATAL, 'topography_mod: Error in opening file '//trim(topog_file))
-        endif
-     endif
-
-     call read_data(fileobj(TOPOG_INDEX), 'ipts', r_ipts)
-     call read_data(fileobj(TOPOG_INDEX), 'jpts', r_jpts)
+            'Reading NetCDF formatted input data file: '//filename, NOTE)
+     call read_data(filename, 'ipts', r_ipts, no_domain=.true.)
+     call read_data(filename, 'jpts', r_jpts, no_domain=.true.)
      ipts = nint(r_ipts)
      jpts = nint(r_jpts)
      open_topog_file = .true.
-     file_is_opened(TOPOG_INDEX) = .true.
   else
-     open_topog_file = .false.
+     if ( file_exist(filename) ) then
+        if (mpp_pe() == mpp_root_pe()) call mpp_error ('topography_mod', &
+             'Reading native formatted input data file: '//filename, NOTE)
+        unit = open_ieee32_file (trim(filename), 'read')
+        read (unit) ipts, jpts
+        open_topog_file = .true.
+     else
+        open_topog_file = .false.
+     endif
   endif
 
  end function open_topog_file
-
- function open_water_file ( )
- logical :: open_water_file
- real    :: r_ipts, r_jpts
- integer :: namelen
-
-  namelen = len(trim(water_file))
-  if ( file_exists(water_file) .AND. water_file(namelen-2:namelen) == '.nc') then
-     if (mpp_pe() == mpp_root_pe()) call mpp_error ('topography_mod', &
-            'Reading NetCDF formatted input data file: '//trim(water_file), NOTE)
-     if(.not. file_is_opened(WATER_INDEX) ) then
-        if(.not. open_file(fileobj(WATER_INDEX), water_file, 'read' )) then
-           call mpp_error(FATAL, 'topography_mod: Error in opening file '//trim(water_file))
-        endif
-     endif
-
-     call read_data(fileobj(WATER_INDEX), 'ipts', r_ipts)
-     call read_data(fileobj(WATER_INDEX), 'jpts', r_jpts)
-     ipts = nint(r_ipts)
-     jpts = nint(r_jpts)
-     open_water_file = .true.
-     file_is_opened(WATER_INDEX) = .true.
-  else
-     open_water_file = .false.
-  endif
-
- end function open_water_file
-
 
 !#######################################################################
 
@@ -731,7 +703,7 @@ end interface
  real :: zdat(ipts,jpts)
  real :: zout2(size(zout,1),size(zout,2))
 
-    call input_data ( TOPOG_INDEX, xdat, ydat, zdat )
+    call input_data ( topog_file, xdat, ydat, zdat )
 
     call horiz_interp ( zdat, xdat, ydat, blon, blat, zout )
 
@@ -764,7 +736,7 @@ end interface
  integer :: js, je
  type (horiz_interp_type) :: Interp
 
-    call input_data ( TOPOG_INDEX, xdat, ydat, zdat )
+    call input_data ( topog_file, xdat, ydat, zdat )
     call find_indices ( minval(blat), maxval(blat), ydat, js, je )
 
     call horiz_interp_new ( Interp, xdat, ydat(js:je+1), blon, blat )
@@ -817,16 +789,24 @@ end interface
 
 !#######################################################################
 
- subroutine input_data ( indx, xdat, ydat, zdat )
- integer, intent(in) :: indx
+ subroutine input_data ( ifile, xdat, ydat, zdat )
+ character(len=*), intent(in) :: ifile
  real, intent(out) :: xdat(ipts+1), ydat(jpts+1), zdat(ipts,jpts)
  integer :: nc
 
-  if( file_is_opened(indx) ) then
-     call read_data(fileobj(indx), 'xdat', xdat)
-     call read_data(fileobj(indx), 'ydat', ydat)
-     call read_data(fileobj(indx), 'zdat', zdat)
-  endif
+   nc = len_trim(ifile)
+
+! note: ipts,jpts,unit are global
+
+  if ( file_exist(trim(ifile)) .AND. ifile(nc-2:nc) == '.nc') then
+     call read_data(trim(ifile), 'xdat', xdat, no_domain=.true.)
+     call read_data(trim(ifile), 'ydat', ydat, no_domain=.true.)
+     call read_data(trim(ifile), 'zdat', zdat, no_domain=.true.)
+  else
+    read (unit) xdat, ydat    ! read lon/lat edges in radians
+    read (unit) zdat          ! read land surface height in meters
+    call close_file (unit)
+ endif
 
  end subroutine input_data
 
@@ -839,7 +819,7 @@ end interface
 
  real :: xdat(ipts+1), ydat(jpts+1), zdat(ipts,jpts)
 
-    call input_data ( WATER_INDEX, xdat, ydat, zdat )
+    call input_data ( water_file, xdat, ydat, zdat )
 
 ! only use designated ocean points
     if (present(do_ocean)) then
@@ -860,7 +840,7 @@ end interface
 
  real :: xdat(ipts+1), ydat(jpts+1), zdat(ipts,jpts)
 
-    call input_data ( WATER_INDEX, xdat, ydat, zdat )
+    call input_data ( water_file, xdat, ydat, zdat )
 
 ! only use designated ocean points
     if (present(do_ocean)) then
@@ -936,8 +916,19 @@ subroutine read_namelist
 
 !  read namelist
 
-   read (input_nml_file, topography_nml, iostat=io)
-   ierr = check_nml_error(io,'topography_nml')
+#ifdef INTERNAL_FILE_NML
+      read (input_nml_file, topography_nml, iostat=io)
+      ierr = check_nml_error(io,'topography_nml')
+#else
+   if ( file_exist('input.nml')) then
+      unit = open_namelist_file ( )
+      ierr=1; do while (ierr /= 0)
+         read  (unit, nml=topography_nml, iostat=io, end=10)
+         ierr = check_nml_error(io,'topography_nml')
+      enddo
+ 10   call close_file (unit)
+   endif
+#endif
 
 !  write version and namelist to log file
 

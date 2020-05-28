@@ -211,7 +211,6 @@ endif
 calendar_in_c = lowercase(trim(cut0(calendar)))
 
 correct_form = (trim(calendar_in_c)) == 'noleap'     .or. (trim(calendar_in_c)) == '365_day' .or. &
-               (trim(calendar_in_c)) == '365_days' .or. &
                (trim(calendar_in_c)) == '360_day'    .or. (trim(calendar_in_c)) == 'julian'  .or. &
                (trim(calendar_in_c)) == 'no_calendar'.or. (trim(calendar_in_c)) == 'thirty_day_months' .or. &
                (trim(calendar_in_c)) == 'gregorian'
@@ -219,7 +218,7 @@ correct_form = (trim(calendar_in_c)) == 'noleap'     .or. (trim(calendar_in_c)) 
 if(.not.correct_form) then
   call error_mesg('get_cal_time','"'//trim(calendar_in_c)//'"'// &
    ' is not an acceptable calendar attribute. acceptable calendars are: '// &
-   ' noleap, 365_day, 365_days, 360_day, julian, no_calendar, thirty_day_months, gregorian',FATAL)
+   ' noleap, 365_day, 360_day, julian, no_calendar, thirty_day_months, gregorian',FATAL)
 endif
 
 calendar_tm_i = get_calendar_type()
@@ -227,7 +226,6 @@ calendar_tm_i = get_calendar_type()
 if(.not.permit_conversion_local) then
   correct_form = (trim(calendar_in_c) == 'noleap'            .and. calendar_tm_i == NOLEAP)            .or. &
                  (trim(calendar_in_c) == '365_day'           .and. calendar_tm_i == NOLEAP)            .or. &
-                 (trim(calendar_in_c) == '365_days'          .and. calendar_tm_i == NOLEAP)            .or. &
                  (trim(calendar_in_c) == '360_day'           .and. calendar_tm_i == THIRTY_DAY_MONTHS) .or. &
                  (trim(calendar_in_c) == 'thirty_day_months' .and. calendar_tm_i == THIRTY_DAY_MONTHS) .or. &
                  (trim(calendar_in_c) == 'julian'            .and. calendar_tm_i == JULIAN)            .or. &
@@ -244,8 +242,6 @@ if (permit_conversion_local) then
     case ('noleap')
         calendar_in_i = NOLEAP
     case ('365_day')
-        calendar_in_i = NOLEAP
-    case ('365_days')
         calendar_in_i = NOLEAP
     case ('360_day')
         calendar_in_i = THIRTY_DAY_MONTHS

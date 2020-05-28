@@ -22,15 +22,18 @@
 
 
 
-use mpp_io_mod,             only:  mpp_io_init
+use mpp_io_mod,             only:  mpp_io_init, mpp_open, MPP_ASCII, &
+                                   MPP_OVERWR, MPP_SEQUENTIAL,   &
+                                   MPP_MULTI, mpp_close
 use fms_mod,                only:  fms_init, mpp_pe, mpp_root_pe, &
-                                   mpp_npes, check_nml_error, &
+                                   file_exist, check_nml_error, &
                                    error_mesg, FATAL, NOTE, WARNING, &
+                                   close_file, open_namelist_file, &
                                    stdlog, write_version_number
 use time_manager_mod,       only:  time_manager_init, month_name, &
                                    get_date, time_type
 use constants_mod,          only:  constants_init, PI, RADIAN
-use mpp_mod,                only:  input_nml_file, get_unit
+use mpp_mod,                only:  input_nml_file
 
 !-------------------------------------------------------------------
 
@@ -145,8 +148,19 @@ subroutine column_diagnostics_init
 !---------------------------------------------------------------------
 !    read namelist.
 !---------------------------------------------------------------------
+#ifdef INTERNAL_FILE_NML
       read (input_nml_file, column_diagnostics_nml, iostat=io)
       ierr = check_nml_error (io, 'column_diagnostics_nml')
+#else
+      if (file_exist('input.nml')) then
+        unit =  open_namelist_file ( )
+        ierr=1; do while (ierr /= 0)
+        read (unit, nml=column_diagnostics_nml, iostat=io, end=10)
+        ierr = check_nml_error (io, 'column_diagnostics_nml')
+        enddo
+10      call close_file (unit)
+      endif
+#endif
 !---------------------------------------------------------------------
 !    write version number and namelist to logfile.
 !---------------------------------------------------------------------
@@ -239,7 +253,7 @@ integer, dimension(:), intent(out)   :: diag_units
       character(len=32)  ::  filename
       logical            ::  allow_ij_input
       logical            ::  open_file
-      integer            ::  io
+
 !--------------------------------------------------------------------
 !    local variables:
 !
@@ -410,14 +424,11 @@ integer, dimension(:), intent(out)   :: diag_units
               write (char, '(i2)') nn
               filename = trim(module) // '_point' //    &
                          trim(adjustl(char)) // '.out'
-              if(mpp_npes() > 10000) then
-                 write( filename,'(a,i6.6)' )trim(filename)//'.', mpp_pe()-mpp_root_pe()
-              else
-                 write( filename,'(a,i4.4)' )trim(filename)//'.', mpp_pe()-mpp_root_pe()
-              endif
-              diag_units(nn) = get_unit()
-              open(diag_units(nn), file=trim(filename), action='WRITE', position='rewind', iostat=io)
-              if(io/=0) call error_mesg ('column_diagnostics_mod', 'Error in opening file '//trim(filename), FATAL)
+              call mpp_open (diag_units(nn), filename, &
+                             form=MPP_ASCII, &
+                             action=MPP_OVERWR,  &
+                             access=MPP_SEQUENTIAL,  &
+                             threading=MPP_MULTI, nohdrs=.true.)
             endif  ! (open_file)
           endif
         endif
@@ -549,14 +560,13 @@ integer, dimension(:), intent(in)  :: diag_units
 !    local variable
 
       integer   :: nn    ! do loop index
-      integer   :: io
+
 !--------------------------------------------------------------------
 !    close the unit associated with each diagnostic column.
 !--------------------------------------------------------------------
       do nn=1, size(diag_units(:))
         if (diag_units(nn) /= -1) then
-          close(diag_units(nn), iostat=io )
-          if(io/=0) call error_mesg('column_diagnostics_mod', 'Error in closing file ', FATAL)
+          call mpp_close (diag_units(nn))
         endif
       end do
 

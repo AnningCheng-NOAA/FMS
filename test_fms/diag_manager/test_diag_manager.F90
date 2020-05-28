@@ -225,7 +225,7 @@ PROGRAM test
   USE mpp_domains_mod, ONLY: mpp_define_io_domain, mpp_define_layout
   USE mpp_domains_mod, ONLY: mpp_domains_init, mpp_domains_set_stack_size
   USE fms_mod, ONLY: fms_init, fms_end, mpp_npes, file_exist, check_nml_error, open_file
-  USE fms_mod, ONLY: error_mesg, FATAL, WARNING, NOTE, stdlog, stdout
+  USE fms_mod, ONLY: error_mesg, FATAL, WARNING, stdlog, stdout
 #ifdef INTERNAL_FILE_NML
   USE mpp_mod, ONLY: input_nml_file
 #else
@@ -371,9 +371,8 @@ PROGRAM test
   END IF
   WRITE (log_unit,test_diag_manager_nml)
 
-SELECT CASE ( test_number ) ! Closes just before the CONTAINS block.
-  ! If the test_number == 23, then call the unstrcutured grid unit test and skip everything else.
-  CASE ( 23 )
+!> If the test_number == 23, then call the unstrcutured grid unit test and skip everything else.
+if (test_number == 23) then
    !Initialize the mpp_domains module
     if (debug) then
         call mpp_domains_init(MPP_DEBUG)
@@ -424,21 +423,20 @@ SELECT CASE ( test_number ) ! Closes just before the CONTAINS block.
     call set_calendar_type(JULIAN)
     time = set_date(1990,1,1,0,0,0)
    CALL unstruct_test (nx, ny, nz, npes, ntiles_x, 1, time,io_tile_factor)
-
-   ! If the test_number == 12, check for the correct error and skip everything else.
-   CASE ( 12 ) 
+else
+!!!!!! ALL OTHER TESTS !!!!!!
+  IF ( test_number == 12 ) THEN
      CALL diag_manager_init(err_msg=err_msg)
      IF ( err_msg /= '' ) THEN
         WRITE (out_unit,'(a)') 'test12 successful: err_msg='//TRIM(err_msg)
-        CALL error_mesg('test_diag_manager','test12 successful.',NOTE)
+        CALL error_mesg('test_diag_manager','test12 successful.',FATAL)
      ELSE
         WRITE (out_unit,'(a)') 'test12 fails'
         CALL error_mesg('test_diag_manager','test12 fails',FATAL)
      END IF
-
-  ! If the test number is not 12 or 23, run all other tests.
-  CASE DEFAULT ! Contains all remaining code up to CONTAINS block.
+  ELSE
      CALL diag_manager_init
+  END IF
 
   IF ( layout(1)*layout(2) .NE. mpp_npes() ) THEN
      CALL mpp_define_layout((/1,nlon,1,nlat/), mpp_npes(), layout )
@@ -609,7 +607,7 @@ SELECT CASE ( test_number ) ! Closes just before the CONTAINS block.
           & volume=id_dat1, area=id_dat1, err_msg=err_msg)
      IF ( err_msg /= '' .OR. id_dat2h <= 0 ) THEN
         CALL error_mesg ('test_diag_manager',&
-             & 'Expected error registering dat2h '//err_msg, NOTE)
+             & 'Expected error registering dat2h '//err_msg, FATAL)
      END IF
   END IF
 
@@ -993,7 +991,7 @@ SELECT CASE ( test_number ) ! Closes just before the CONTAINS block.
      END IF
   END IF
   CALL diag_manager_end(Time)
-END SELECT ! End of case handling opened for test 12. 
+endif !! This is the endif for the unstructured grid if
 
   CALL fms_io_exit
   CALL fms_end
